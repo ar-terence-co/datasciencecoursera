@@ -2,33 +2,32 @@ library(plyr)
 library(dplyr)
 library(stringr)
 
-run_analysis <- function(destdir = "3_getting_and_cleaning_data_proj/data", force_download = FALSE) {
+run_analysis <- function(destdir = ".", should_download = FALSE) {
   filename = "smartphones"
-  download_and_extract_data(destdir, filename = filename, force_download=force_download)
+  if (should_download) {
+    download_and_extract_data(destdir, filename = filename, should_download = should_download)
+  }
   
-  datadir = paste(destdir, filename, "UCI HAR Dataset", sep="/")
+  datadir = paste(destdir, "UCI HAR Dataset", sep="/")
   dts <- load_to_dts(datadir)
   
   tidy_dt <- generate_tidy_data(dts)
-  fwrite(tidy_dt, paste0(destdir, "/", filename, "-tidy.csv"))
+  write.table(tidy_dt, paste0(destdir, "/", filename, "-tidy.txt"), row.names=FALSE)
   
   summary_dt <- tidy_dt %>% group_by(subject, activity) %>% summarize_all(mean)
-  fwrite(tidy_dt, paste0(destdir, "/", filename, "-summary.csv"))
+  write.table(summary_dt, paste0(destdir, "/", filename, "-summary.txt"), row.names=FALSE)
   
   summary_dt
 }
 
-download_and_extract_data <- function(destdir, filename = "smartphones", force_download = FALSE) {
+download_and_extract_data <- function(destdir, filename = "smartphones") {
   filepath <- paste0(destdir, "/", filename, ".zip")
-  if (force_download | !file.exists(filepath)) {
-    download.file(
-      "https://d396qusza40orc.cloudfront.net/getdata%2Fprojectfiles%2FUCI%20HAR%20Dataset.zip",
-      destfile=filepath,
-    )
-    write_date_downloaded(destdir)
-  }
-  datadir <- paste0(destdir, "/", filename)
-  unzip(filepath, exdir=datadir)
+  download.file(
+    "https://d396qusza40orc.cloudfront.net/getdata%2Fprojectfiles%2FUCI%20HAR%20Dataset.zip",
+    destfile=filepath,
+  )
+  write_date_downloaded(destdir)
+  unzip(filepath, exdir=destdir)
 }
 
 write_date_downloaded <- function(destdir, filename = "date_downloaded.txt") {
