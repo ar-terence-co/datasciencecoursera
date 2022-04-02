@@ -1,0 +1,237 @@
+# Most impactful storm events across the United States
+
+Last Updated: `r date()`
+
+## Synopsis
+
+Storm data from the National Weather Service was analyzed in order to find storm events that have the most impact across the United States. Each event was measured for two kinds of impact - population health impact (fatalities and injuries) and economic impact (property and crop damage). Tornadoes, excessive heat, and thunderstorm winds are recorded to have the highest population health impact, while floods, hurricanes/typhoons, and tornadoes are recorded to have the highest economic impact. Overall, tornadoes, floods, thunderstorm winds, flash floods, and ice storms are ranked top 10 in both population health impact and economic impact.
+
+## Document Setup
+
+```{r results = F}
+library(knitr)
+library(lemon)
+opts_chunk$set(echo = T, message = F, warning = F, results = F, fig.path = "figures/")
+knit_print.data.frame <- lemon_print
+knit_print.table <- lemon_print
+```
+
+```{r}
+library(data.table)
+library(dtplyr)
+library(tidyverse)
+
+library(gridExtra)
+```
+
+## Data Processing
+
+The data for this report is Storm Data from the US National Weather Service (NWS). This data has been uploaded to the Data Science course website and can be downloaded [here][1].
+
+Documentation on how the variables are defined can be found here:
+
+-  [Storm Data Preparation][2] by National Weather Service  
+-  [Storm Data FAQ][3] by National Climatic Data Center  
+
+Let us download the data for analysis.
+
+```{r cache = T}
+filename <- "data/storm_data.csv.bz2"
+if (!file.exists(filename)) {
+  download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2", destfile = filename)
+}
+storm_dt_raw <- fread(filename)
+```
+
+For the questions we want to ask across the United States, we're most interested in the following columns
+
+-  EVTYPE: Storm event type  
+-  FATALITIES: Fatality count resulting from the storm event  
+-  INJURIES: Injured count resulting from the storm event  
+-  PROPDMG: Property damage resulting from the storm event, scaled by PROPDMGEXP  
+-  PROPDMGEXP: Scaling factor of the property damage value listed in PROPDMG  
+-  CROPDMG: Crop damage resulting from the storm event, scaled by CROPDMGEXP  
+-  CROPDMGEXP: Scaling factor of the crop damage value listed in CROPDMG  
+
+We'll remove unrelated columns in this analysis.
+
+```{r results = T, render = lemon_print}
+storm_dt <- storm_dt_raw %>% 
+  select(c(EVTYPE, FATALITIES, INJURIES, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP, REMARKS)) %>%
+  as.data.table()
+
+summary(storm_dt)
+```
+```{r results = T, render = lemon_print}
+str(storm_dt)
+```
+
+
+According to the documentation there are only 48 storm event types, but the data mentions 985 unique storm event types. Some data cleaning on the EVTYPE column is needed.
+
+```{r results = T}
+length(unique(storm_dt$EVTYPE))
+```
+
+While this doesn't cover everything, it should cover enough data that the most significant EVTYPEs are secured in ranking.
+```{r}
+storm_dt <- storm_dt %>%
+  mutate(EVTYPE = str_to_upper(str_trim(EVTYPE))) %>%
+  mutate(EVTYPE = if_else(
+    grepl("^HURRICANE|^TYPHOON", EVTYPE), "HURRICANE/TYPHOON", if_else(
+    grepl("^AVALANCE", EVTYPE), "AVALANCHE", if_else(
+    grepl("^HEAVY RAIN|^URBAN/SML STREAM FLD|^RAIN|^HEAVYRAIN", EVTYPE), "HEAVY RAIN", if_else(
+    grepl("^HIGH WIND", EVTYPE), "HIGH WIND", if_else(
+    grepl("^WINTER WEATHER", EVTYPE), "WINTER WEATHER", if_else(
+    grepl("^FLASH FLOOD|^FLASHFLOOD|^ICE JAM|^ICEJAM", EVTYPE), "FLASH FLOOD", if_else(
+    grepl("^(EXTREME|RECORD) (COLD|WIND CHILL|WINDCHILL)", EVTYPE), "EXTREME COLD/WIND CHILL", if_else(
+    grepl("^(EXCESSIVE|EXTREME|RECORD) (HEAT|WARMTH)", EVTYPE), "EXCESSIVE HEAT", if_else(
+    grepl("^RIP CURRENT", EVTYPE), "RIP CURRENT", if_else(
+    grepl("^LANDSLIDE|^LAND SLIDE", EVTYPE), "DEBRIS FLOW", if_else(
+    grepl("^FLOOD|^RIVER FLOOD|^URBAN FLOOD|^MAJOR FLOOD", EVTYPE), "FLOOD", if_else(
+    grepl("^TORNADO", EVTYPE), "TORNADO", if_else(
+    grepl("^FOG|^DENSE FOG|^DENSEFOG", EVTYPE), "DENSE FOG", if_else(
+    grepl("^WIND|^STRONGWIND|^STRONG WIND", EVTYPE), "STRONG WIND", if_else(
+    grepl("^SNOW|^(HEAVY|EXCESSIVE) SNOW|^HEAVYSNOW", EVTYPE), "HEAVY SNOW", if_else(
+    grepl("^HAIL", EVTYPE), "HAIL", if_else(
+    grepl("^WINTERSTORM|^WINTER STORM", EVTYPE), "WINTER STORM", if_else(
+    grepl("^ICESTORM|^ICE STORM", EVTYPE), "ICE STORM", if_else(
+    grepl("^TROPICALSTORM|^TROPICAL STORM", EVTYPE), "TROPICAL STORM", if_else(
+    grepl("^WATERSPOUT|^WATER SPOUT", EVTYPE), "WATERSPOUT", if_else(
+    grepl("BEACH|COASTAL|CSTL", EVTYPE), "COASTAL FLOOD", if_else(
+    grepl("FIRE", EVTYPE), "WILDFIRE", if_else(
+    grepl("MARINE TSTM|MARINE THUNDERSTORM", EVTYPE), "MARINE THUNDERSTORM WIND", if_else(
+    grepl("TSTM|THUNDERSTORM|MICROBURST", EVTYPE), "THUNDERSTORM WIND", if_else(
+    grepl("FROST|FREEZE|^ICE", EVTYPE), "FROST/FREEZE", if_else(
+    grepl("HIGH SURF|HIGH TIDE", EVTYPE), "HIGH SURF", EVTYPE
+  ))))))))))))))))))))))))))) %>%
+  as.data.table()
+```
+
+
+Here are the values available for the scaling factors PROPDMGEXP and CROPDMGEXP.
+```{r results = T}
+storm_dt %>%
+  distinct(PROPDMGEXP, .keep_all = F) %>%
+  as.data.table() %>%
+  .$PROPDMGEXP
+```
+
+```{r results = T}
+storm_dt %>%
+  distinct(CROPDMGEXP, .keep_all = F) %>%
+  as.data.table() %>%
+  .$CROPDMGEXP
+```
+
+There are multiple values available for PROPDMGEXP and CROPDMGEXP
+
+-  K or k, M or m, B or b: scale the value by 10^3, 10^6, 10^9 USD respectively  
+-  0-9: scale the value by 10^n, where n is the value in this column  
+-  ?: only paired with zero values, can be ignored  
+-  +,-: probably means 20K+ or 20M+, unclear. Since there are only 6 data points, it should be safe to ignore these values  
+-  H or h: probably means hectares. Since hectares is land area and not dollar value, and there are only 7 data points with this annotation, it should be safe to ignore these values  
+
+PROPDMG and CROPDMG will be converted to floating types using the PROPDMGEXP and CROPDMGEXP values.
+
+```{r results = T, render = lemon_print}
+expchar <- data.table(
+  char = c("K", "M", "B"),
+  exp = c("3", "6", "9")
+)
+storm_dt <- storm_dt %>%
+  mutate(PROPDMGEXP = str_to_upper(PROPDMGEXP), CROPDMGEXP = str_to_upper(CROPDMGEXP)) %>%
+  left_join(expchar, by = c("PROPDMGEXP" = "char")) %>%
+  left_join(expchar, by = c("CROPDMGEXP" = "char"), suffix = c(".PROPDMG", ".CROPDMG")) %>%
+  mutate(
+    PROPDMG = if_else(grepl("[H?+-]", PROPDMGEXP), 0, PROPDMG),
+    CROPDMG = if_else(grepl("[H?+-]", CROPDMGEXP), 0, CROPDMG),
+    exp.PROPDMG = coalesce(as.integer(coalesce(exp.PROPDMG, PROPDMGEXP)), 0L), 
+    exp.CROPDMG = coalesce(as.integer(coalesce(exp.CROPDMG, CROPDMGEXP)), 0L),
+    PROPDMGVALUE = PROPDMG * 10 ^ exp.PROPDMG,
+    CROPDMGVALUE = CROPDMG * 10 ^ exp.CROPDMG
+  ) %>%
+  select(c(EVTYPE, FATALITIES, INJURIES, PROPDMGVALUE, CROPDMGVALUE)) %>%
+  as.data.table()
+
+head(storm_dt, 5)
+```
+
+## Results
+
+Here we aggregate the data by EVTYPE and take a look of the total impact of each storm event type across the United States. New columns were added to indicate the total health impact and economic impact of these events. Fatalities will be weighted 4x more then Injuries under the total health impact of these events. Economic impact will be measured by billions of dollars in damages.
+```{r}
+storm_dt_by_evtype <- storm_dt %>%
+  group_by(EVTYPE) %>%
+  summarize_all("sum") %>%
+  mutate(
+    HEALTHIMPACT = FATALITIES + INJURIES / 4,
+    ECONOMICIMPACT = (PROPDMGVALUE + CROPDMGVALUE) / 10^9,
+    PROPDMGVALUE = PROPDMGVALUE / 10^9,
+    CROPDMGVALUE = CROPDMGVALUE / 10^9
+  )
+```
+
+
+Since we'll be using it often, we'll be using this function in order to create a plot that ranks Storm Events by one column and displays the top 10.
+```{r}
+create_rank_plot_by_evtype <- function(column, col_label, n = 10) { 
+  dt <- storm_dt_by_evtype %>% 
+    mutate(RANK = dense_rank(-.data[[column]]), EVTYPE = if_else(RANK > n, "OTHER EVENTS", EVTYPE)) %>%
+    group_by(EVTYPE) %>%
+    summarize("{column}" := sum(.data[[column]]), RANK = min(RANK)) %>% 
+    arrange(RANK) %>%
+    mutate(EVTYPE = factor(EVTYPE)) %>%
+    as.data.table()
+  
+  g <- ggplot(dt, aes(reorder(EVTYPE, -RANK), .data[[column]])) +
+    geom_col(fill = "red") +
+    coord_flip() +
+    labs(
+      x = "Storm event type",
+      y = col_label,
+      title = paste0("Top ", n, " Storm Events\nranked by ", col_label, "\nacross the United States")
+    )
+}
+```
+
+
+This is a figure for the Top 10 Storm Events ranked by Population Health Impact. The top 3 events are Tornadoes, Excessive Heat and Thunderstorm Winds. 
+
+Health impact in this report will be quantitatively defined as `Fatalities + Injuries / 4`, giving 4x more weight to each fatality compared to an injury. This multiplier is arbitrary and has been selected to assign more gravity to events that lead to deaths. Nonetheless, Tornadoes have both the top number of fatalities and injuries across the United States, as recorded by the NWS. Tornadoes are arguably the most dangerous out of all these storm events with respect to population health, as it constitutes around half of the total health impact of all storm events.
+
+```{r fig.height = 6, fig.width = 12}
+p1 <- create_rank_plot_by_evtype("HEALTHIMPACT", "Population Health impact (Fatalities + Injuries * 0.25)")
+p2 <- create_rank_plot_by_evtype("FATALITIES", "Fatalities")
+p3 <- create_rank_plot_by_evtype("INJURIES", "Injuries")
+
+grid.arrange(
+  p1, p2, p3,
+  layout_matrix = rbind(
+    c(1, 1),
+    c(2, 3)
+  )
+)
+```
+
+This is a figure for the Top 10 Storm Events ranked by Economic Impact. The top 3 events are Floods, Hurricanes/Typhoons and Tornadoes. 
+
+Floods cause the most economic damage across the United States, topping the chart for Property Damage and being the second largest contributor to Crop Damage as recorded by NWS. Droughts are the top 1 contributor to Crop damage but it is only the 7th in total economic impact. This is because the value of properties destroyed is around 10x more that of crops. 
+```{r fig.height = 6, fig.width = 12}
+p1 <- create_rank_plot_by_evtype("ECONOMICIMPACT", "Economic Impact (Billions of Dollars)")
+p2 <- create_rank_plot_by_evtype("PROPDMGVALUE", "Property Damage (Billions of Dollars)")
+p3 <- create_rank_plot_by_evtype("CROPDMGVALUE", "Crop Damage (Billions of Dollars)")
+
+grid.arrange(
+  p1, p2, p3,
+  layout_matrix = rbind(
+    c(1, 1),
+    c(2, 3)
+  )
+)
+```
+If we compare the two charts, we can see that the following Storm events are the most catastrophic in both population health and economic impact across the United States: Tornadoes, Floods, Thunderstorm Winds, Flash Floods, and Ice Storms. 
+
+[1]: https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2
+[2]: https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf
+[3]: https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf
